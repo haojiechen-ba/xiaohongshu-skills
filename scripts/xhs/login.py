@@ -381,6 +381,7 @@ def wait_for_login(page: Page, timeout: float = 120.0) -> bool:
                     # 输出二维码数据 URL 供显示
                     print(json.dumps({
                         "captcha_qrcode_path": final_path,
+                        "captcha_data_url": captcha_data_url,
                         "message": "新设备登录需要二次确认，请扫描第二个二维码"
                     }, ensure_ascii=False))
                     captcha_qrcode_saved = True

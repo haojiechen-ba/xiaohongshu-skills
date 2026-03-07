@@ -149,6 +149,7 @@ def cmd_login(args: argparse.Namespace) -> None:
             json.dumps(
                 {
                     "qrcode_path": qrcode_path,
+                    "qrcode_data_url": qrcode_data_url,
                     "message": "请扫码登录（新设备可能需要二次确认）",
                 },
                 ensure_ascii=False,
