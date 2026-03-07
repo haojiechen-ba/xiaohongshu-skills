@@ -4,6 +4,10 @@
 LOGIN_STATUS = ".main-container .user .link-wrapper .channel"
 QRCODE_IMG = ".login-container .qrcode-img"
 
+# 二次确认弹窗（新设备登录）
+CAPTCHA_MODAL = ".captcha-modal-content"
+CAPTCHA_QRCODE = ".captcha-modal-content img"
+
 # ========== 手机号登录 ==========
 LOGIN_CONTAINER = ".login-container"
 PHONE_INPUT = "label.phone input"

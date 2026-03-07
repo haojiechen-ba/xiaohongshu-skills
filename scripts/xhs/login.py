@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import struct
@@ -132,6 +133,8 @@ from .human import sleep_random
 from .selectors import (
     AGREE_CHECKBOX,
     AGREE_CHECKBOX_CHECKED,
+    CAPTCHA_MODAL,
+    CAPTCHA_QRCODE,
     CODE_INPUT,
     GET_CODE_BUTTON,
     LOGIN_CONTAINER,
@@ -334,6 +337,12 @@ def logout(page: Page) -> bool:
 def wait_for_login(page: Page, timeout: float = 120.0) -> bool:
     """等待扫码登录完成。
 
+    处理小红书扫码登录流程：
+    1. 显示第一个二维码
+    2. 用户扫码 → 可能弹出二次确认弹窗（新设备）
+    3. 如果有二次确认，需要再扫第二个二维码
+    4. 登录成功
+
     Args:
         page: CDP 页面对象。
         timeout: 超时时间（秒）。
@@ -342,9 +351,42 @@ def wait_for_login(page: Page, timeout: float = 120.0) -> bool:
         True 登录成功，False 超时。
     """
     deadline = time.monotonic() + timeout
+    captcha_detected = False
+    captcha_qrcode_saved = False
+
     while time.monotonic() < deadline:
+        # 检查是否已登录
         if page.has_element(LOGIN_STATUS):
             logger.info("登录成功")
             return True
+
+        # 检测二次确认弹窗（新设备登录）
+        if not captcha_detected and page.has_element(CAPTCHA_MODAL):
+            captcha_detected = True
+            logger.info("检测到二次确认弹窗（新设备登录）")
+
+            # 获取弹窗中的二维码
+            captcha_src = page.get_element_attribute(CAPTCHA_QRCODE, "src")
+            if captcha_src and not captcha_qrcode_saved:
+                try:
+                    # 保存二次确认二维码
+                    captcha_path, captcha_data_url = save_qrcode_to_file(captcha_src)
+                    # 重命名为二次确认二维码
+                    final_path = os.path.join(_QR_DIR, "captcha_qrcode.png")
+                    if os.path.exists(final_path):
+                        os.remove(final_path)
+                    os.rename(captcha_path, final_path)
+                    logger.info("二次确认二维码已保存: %s", final_path)
+                    logger.warning("请扫描二次确认二维码完成登录（使用已登录该账号的手机APP）")
+                    # 输出二维码数据 URL 供显示
+                    print(json.dumps({
+                        "captcha_qrcode_path": final_path,
+                        "message": "新设备登录需要二次确认，请扫描第二个二维码"
+                    }, ensure_ascii=False))
+                    captcha_qrcode_saved = True
+                except Exception as e:
+                    logger.warning("保存二次确认二维码失败: %s", e)
+
         time.sleep(0.5)
+
     return False
