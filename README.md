@@ -8,6 +8,7 @@
 
 | 技能 | 说明 | 核心能力 |
 |------|------|----------|
+| **xhs-content-creation** | 内容创作 | 笔记撰写、Markdown 格式、图片卡片渲染 |
 | **xhs-auth** | 认证管理 | 登录检查、扫码登录、多账号切换 |
 | **xhs-publish** | 内容发布 | 图文 / 视频 / 长文发布、定时发布、分步预览 |
 | **xhs-explore** | 内容发现 | 关键词搜索、笔记详情、用户主页、首页推荐 |
@@ -76,6 +77,10 @@ uv sync
 
 **认证登录：**
 > "登录小红书" / "检查登录状态"
+
+**内容创作：**
+> "帮我写一篇小红书笔记，主题是效率工具推荐"
+> "根据这份资料创作小红书内容，并生成图片卡片"
 
 **搜索浏览：**
 > "搜索关于露营的笔记" / "查看这条笔记的详情"
@@ -176,6 +181,95 @@ python scripts/cli.py favorite-feed \
   --feed-id FEED_ID --xsec-token XSEC_TOKEN
 ```
 
+#### 7. 内容创作与图片渲染
+
+**创作小红书笔记并生成图片卡片：**
+
+1. 首先创建符合格式要求的 Markdown 文件：
+
+```markdown
+---
+emoji: "💡"
+title: "5个效率神器让工作效率翻倍"
+subtitle: "对着抄作业就好了，一起变高效"
+---
+
+# 📝 神器一：Notion
+
+> 全能型笔记工具，支持数据库、看板、日历等多种视图...
+
+## 特色功能
+
+- 特色一
+- 特色二
+
+# ⚡ 神器二：Raycast
+
+\`\`\`
+可使用代码块来增加渲染后图片的视觉丰富度
+\`\`\`
+
+## 推荐原因
+
+- 原因一
+- 原因二
+```
+
+2. 使用渲染脚本生成图片：
+
+```bash
+# 基本用法（默认主题 + 手动分页）
+python scripts/render_xhs.py content.md
+
+# 指定输出目录
+python scripts/render_xhs.py content.md -o ./output
+
+# 使用不同主题
+python scripts/render_xhs.py content.md -t playful-geometric
+
+# 使用自动分页模式（推荐）
+python scripts/render_xhs.py content.md -m auto-split
+
+# 切换主题 + 自动分页
+python scripts/render_xhs.py content.md -t terminal -m auto-split
+
+# 固定尺寸，自动缩放内容
+python scripts/render_xhs.py content.md -m auto-fit
+
+# 动态高度（根据内容调整）
+python scripts/render_xhs.py content.md -m dynamic --max-height 4320
+```
+
+**可用主题：**
+- `default` - 默认简约浅灰渐变
+- `playful-geometric` - 活泼几何风格（Memphis）
+- `neo-brutalism` - 新粗野主义
+- `botanical` - 植物园自然
+- `professional` - 专业商务
+- `retro` - 复古怀旧
+- `terminal` - 终端命令行
+- `sketch` - 手绘素描
+
+**分页模式：**
+- `separator` - 按 `---` 分隔符手动分页（默认）
+- `auto-fit` - 固定尺寸下自动缩放文字，避免溢出/留白
+- `auto-split` - 按渲染后高度自动切分分页（推荐）
+- `dynamic` - 根据内容动态调整图片高度
+
+**生成结果：**
+- `cover.png` - 封面图片
+- `card_1.png`, `card_2.png`, ... - 正文卡片图片
+- 图片尺寸：1080×1440px（3:4 比例，符合小红书推荐）
+
+**依赖安装：**
+```bash
+# 安装 Python 依赖
+uv sync
+
+# 安装 Playwright 浏览器
+playwright install chromium
+```
+
 ## CLI 命令参考
 
 全局选项：
@@ -238,8 +332,23 @@ xiaohongshu-skills/
 │   ├── image_downloader.py         # 媒体下载（SHA256 缓存）
 │   ├── title_utils.py              # UTF-16 标题长度计算
 │   ├── run_lock.py                 # 单实例锁
-│   └── publish_pipeline.py         # 发布编排器
+│   ├── publish_pipeline.py         # 发布编排器
+│   └── render_xhs.py               # 小红书卡片渲染脚本
+├── assets/                         # 渲染资源文件
+│   ├── cover.html                  # 封面 HTML 模板
+│   ├── card.html                   # 正文卡片 HTML 模板
+│   ├── styles.css                  # 共用样式表
+│   └── themes/                     # 主题样式目录
+│       ├── default.css
+│       ├── playful-geometric.css
+│       ├── neo-brutalism.css
+│       ├── botanical.css
+│       ├── professional.css
+│       ├── retro.css
+│       ├── terminal.css
+│       └── sketch.css
 ├── skills/                         # Claude Code Skills 定义
+│   ├── xhs-content-creation/SKILL.md  # ✨ 新增：内容创作技能
 │   ├── xhs-auth/SKILL.md
 │   ├── xhs-publish/SKILL.md
 │   ├── xhs-explore/SKILL.md
