@@ -37,10 +37,14 @@ xiaohongshu-skills/
 │   └── publish_pipeline.py         # 发布编排器
 ├── skills/                         # Claude Code Skills 定义
 │   ├── xhs-auth/SKILL.md           # 认证管理
+│   ├── xhs-content-creation/       # 内容创作（笔记撰写、图片渲染）
+│   ├── xhs-content-ops/            # 复合内容运营工作流
 │   ├── xhs-publish/SKILL.md        # 内容发布（图文+视频）
 │   ├── xhs-explore/SKILL.md        # 内容发现与分析
-│   ├── xhs-interact/SKILL.md       # 社交互动（评论/点赞/收藏）
-│   └── xhs-content-ops/SKILL.md    # 复合内容运营工作流
+│   └── xhs-interact/SKILL.md       # 社交互动（评论/点赞/收藏）
+├── references/                      # 详细参考文档
+│   ├── cli-commands.md              # CLI 命令详细参数
+│   └── selectors.md                 # CSS 选择器参考
 ├── pyproject.toml                  # uv 项目配置
 ├── SKILL.md                        # 统一入口（路由到子技能）
 ├── CLAUDE.md                       # 本文件
