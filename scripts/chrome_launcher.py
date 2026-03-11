@@ -147,6 +147,11 @@ def launch_chrome(
     if headless:
         args.append("--headless=new")
 
+    # Linux root 用户必须加 --no-sandbox，否则 Chrome 会直接崩溃
+    if platform.system() == "Linux" and os.geteuid() == 0:
+        args.append("--no-sandbox")
+        logger.info("检测到 root 用户，已自动添加 --no-sandbox")
+
     # 代理
     proxy = os.getenv("XHS_PROXY")
     if proxy:
