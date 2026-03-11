@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 import struct
@@ -275,15 +274,22 @@ def send_phone_code(page: Page, phone: str) -> bool:
     return True
 
 
-def submit_phone_code(page: Page, code: str) -> bool:
+def submit_phone_code(page: Page, code: str) -> dict[str, object]:
     """填写短信验证码并提交登录。
+
+    提交后可能出现两种情况：
+    1. 直接登录成功
+    2. 弹出二次确认弹窗（新设备登录），需要再扫码
 
     Args:
         page: CDP 页面对象。
         code: 收到的短信验证码。
 
     Returns:
-        True 登录成功，False 失败（超时或验证码错误）。
+        dict:
+        - {"logged_in": True} — 登录成功
+        - {"logged_in": False, "error": "..."} — 验证码错误
+        - {"logged_in": False, "captcha_required": True, ...} — 需要二次确认扫码
     """
     # 点击验证码输入框并逐字输入
     page.click_element(CODE_INPUT)
@@ -299,7 +305,7 @@ def submit_phone_code(page: Page, code: str) -> bool:
     err = page.get_element_text(LOGIN_ERR_MSG)
     if err and err.strip():
         logger.warning("登录失败: %s", err.strip())
-        return False
+        return {"logged_in": False, "error": err.strip()}
 
     return wait_for_login(page, timeout=30.0)
 
@@ -334,60 +340,101 @@ def logout(page: Page) -> bool:
     return True
 
 
-def wait_for_login(page: Page, timeout: float = 120.0) -> bool:
+def wait_for_login(page: Page, timeout: float = 120.0) -> dict[str, object]:
     """等待扫码登录完成。
 
     处理小红书扫码登录流程：
-    1. 显示第一个二维码
+    1. 显示第一个二维码（或提交验证码）
     2. 用户扫码 → 可能弹出二次确认弹窗（新设备）
-    3. 如果有二次确认，需要再扫第二个二维码
-    4. 登录成功
+    3. 如果有二次确认，自动提取二维码并返回
+    4. 调用方展示二维码，用户扫码后登录成功
 
     Args:
         page: CDP 页面对象。
         timeout: 超时时间（秒）。
 
     Returns:
-        True 登录成功，False 超时。
+        dict:
+        - {"logged_in": True} — 登录成功
+        - {"logged_in": False, "captcha_required": True, "captcha_qrcode_path": "...",
+           "captcha_data_url": "data:...", "message": "..."} — 需要二次确认扫码
+        - {"logged_in": False, "timeout": True} — 超时
     """
     deadline = time.monotonic() + timeout
-    captcha_detected = False
-    captcha_qrcode_saved = False
 
     while time.monotonic() < deadline:
         # 检查是否已登录
         if page.has_element(LOGIN_STATUS):
             logger.info("登录成功")
-            return True
+            return {"logged_in": True}
 
         # 检测二次确认弹窗（新设备登录）
-        if not captcha_detected and page.has_element(CAPTCHA_MODAL):
-            captcha_detected = True
+        if page.has_element(CAPTCHA_MODAL):
             logger.info("检测到二次确认弹窗（新设备登录）")
-
-            # 获取弹窗中的二维码
-            captcha_src = page.get_element_attribute(CAPTCHA_QRCODE, "src")
-            if captcha_src and not captcha_qrcode_saved:
-                try:
-                    # 保存二次确认二维码
-                    captcha_path, captcha_data_url = save_qrcode_to_file(captcha_src)
-                    # 重命名为二次确认二维码
-                    final_path = os.path.join(_QR_DIR, "captcha_qrcode.png")
-                    if os.path.exists(final_path):
-                        os.remove(final_path)
-                    os.rename(captcha_path, final_path)
-                    logger.info("二次确认二维码已保存: %s", final_path)
-                    logger.warning("请扫描二次确认二维码完成登录（使用已登录该账号的手机APP）")
-                    # 输出二维码数据 URL 供显示
-                    print(json.dumps({
-                        "captcha_qrcode_path": final_path,
-                        "captcha_data_url": captcha_data_url,
-                        "message": "新设备登录需要二次确认，请扫描第二个二维码"
-                    }, ensure_ascii=False))
-                    captcha_qrcode_saved = True
-                except Exception as e:
-                    logger.warning("保存二次确认二维码失败: %s", e)
+            result = _extract_captcha_qrcode(page)
+            if result:
+                return result
+            # 提取失败但弹窗存在，继续轮询等登录成功
 
         time.sleep(0.5)
 
-    return False
+    return {"logged_in": False, "timeout": True}
+
+
+def fetch_captcha_qrcode(page: Page) -> dict[str, object]:
+    """检测并获取二次确认弹窗中的二维码（非阻塞）。
+
+    用于 get-qrcode 非阻塞流程：用户扫完第一个二维码后轮询 check-login，
+    若检测到二次确认弹窗，调用此函数提取弹窗内的二维码。
+
+    Args:
+        page: CDP 页面对象。
+
+    Returns:
+        dict:
+        - {"captcha_required": False} — 无二次确认弹窗
+        - {"captcha_required": True, "captcha_qrcode_path": "...",
+           "captcha_data_url": "data:...", "message": "..."} — 弹窗存在，已提取二维码
+    """
+    if not page.has_element(CAPTCHA_MODAL):
+        return {"captcha_required": False}
+
+    logger.info("检测到二次确认弹窗（新设备登录）")
+    result = _extract_captcha_qrcode(page)
+    if result:
+        return result
+    return {"captcha_required": True, "error": "检测到二次确认弹窗但无法提取二维码"}
+
+
+def _extract_captcha_qrcode(page: Page) -> dict[str, object] | None:
+    """从二次确认弹窗中提取二维码图片并保存。
+
+    Args:
+        page: CDP 页面对象。
+
+    Returns:
+        包含二维码信息的 dict，提取失败返回 None。
+    """
+    captcha_src = page.get_element_attribute(CAPTCHA_QRCODE, "src")
+    if not captcha_src:
+        logger.warning("二次确认弹窗中未找到二维码图片")
+        return None
+
+    try:
+        captcha_path, captcha_data_url = save_qrcode_to_file(captcha_src)
+        # 重命名为二次确认二维码
+        final_path = os.path.join(_QR_DIR, "captcha_qrcode.png")
+        if os.path.exists(final_path):
+            os.remove(final_path)
+        os.rename(captcha_path, final_path)
+        logger.info("二次确认二维码已保存: %s", final_path)
+        return {
+            "logged_in": False,
+            "captcha_required": True,
+            "captcha_qrcode_path": final_path,
+            "captcha_data_url": captcha_data_url,
+            "message": "新设备登录需要二次确认，请用小红书 App 扫描此二维码",
+        }
+    except Exception as e:
+        logger.warning("保存二次确认二维码失败: %s", e)
+        return None

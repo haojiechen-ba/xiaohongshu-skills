@@ -102,39 +102,60 @@ def _headless_fallback(port: int) -> None:
 
 
 def cmd_check_login(args: argparse.Namespace) -> None:
-    """检查登录状态。"""
-    from xhs.login import check_login_status
+    """检查登录状态（同时检测二次确认弹窗）。"""
+    from xhs.login import check_login_status, fetch_captcha_qrcode
 
     browser, page = _connect(args)
     try:
         logged_in = check_login_status(page)
         if logged_in:
             _output({"logged_in": True}, exit_code=0)
+            return
+
+        # 未登录时：检测是否存在二次确认弹窗
+        captcha_result = fetch_captcha_qrcode(page)
+        if captcha_result.get("captcha_required"):
+            _output({
+                "logged_in": False,
+                "captcha_required": True,
+                "captcha_qrcode_path": captcha_result.get("captcha_qrcode_path", ""),
+                "captcha_data_url": captcha_result.get("captcha_data_url", ""),
+                "message": captcha_result.get("message", "新设备登录需要二次确认，请扫描二维码"),
+            }, exit_code=1)
+            return
+
+        from chrome_launcher import has_display
+        if has_display():
+            _output({
+                "logged_in": False,
+                "login_method": "qrcode",
+                "hint": "请运行 login，Chrome 窗口会弹出二维码，扫码后自动完成登录",
+            }, exit_code=1)
         else:
-            from chrome_launcher import has_display
-            if has_display():
-                _output({
-                    "logged_in": False,
-                    "login_method": "qrcode",
-                    "hint": "请运行 login，Chrome 窗口会弹出二维码，扫码后自动完成登录",
-                }, exit_code=1)
-            else:
-                # 无界面环境：二维码（扫对话窗口中的图片）和手机验证码均可
-                _output({
-                    "logged_in": False,
-                    "login_method": "both",
-                    "hint": (
-                        "方式A: get-qrcode（二维码将显示在对话窗口，扫码即可）；"
-                        "方式B: send-code --phone <手机号>（手机验证码）"
-                    ),
-                }, exit_code=1)
+            # 无界面环境：二维码（扫对话窗口中的图片）和手机验证码均可
+            _output({
+                "logged_in": False,
+                "login_method": "both",
+                "hint": (
+                    "方式A: get-qrcode（二维码将显示在对话窗口，扫码即可）；"
+                    "方式B: send-code --phone <手机号>（手机验证码）"
+                ),
+            }, exit_code=1)
     finally:
         browser.close_page(page)
         browser.close()
 
 
 def cmd_login(args: argparse.Namespace) -> None:
-    """获取登录二维码并阻塞等待扫码（最多 120 秒）。"""
+    """获取登录二维码并阻塞等待扫码（最多 120 秒）。
+
+    处理流程：
+    1. 显示登录二维码
+    2. 等待用户扫码
+    3. 如果弹出二次确认弹窗（新设备），自动提取并输出二次确认二维码
+    4. 继续等待用户扫第二个码
+    5. 登录成功或超时
+    """
     from xhs.login import fetch_qrcode, save_qrcode_to_file, wait_for_login
 
     browser, page = _connect(args)
@@ -153,21 +174,54 @@ def cmd_login(args: argparse.Namespace) -> None:
                     "message": "请扫码登录（新设备可能需要二次确认）",
                 },
                 ensure_ascii=False,
+            ),
+            flush=True,
+        )
+
+        # 第一阶段：等待扫码（最多 120 秒）
+        result = wait_for_login(page, timeout=120)
+        if result.get("logged_in"):
+            _output({"logged_in": True, "message": "登录成功"})
+            return
+
+        # 检测到二次确认弹窗：输出二次确认二维码，继续等待
+        if result.get("captcha_required"):
+            print(
+                json.dumps(
+                    {
+                        "captcha_required": True,
+                        "captcha_qrcode_path": result.get("captcha_qrcode_path", ""),
+                        "captcha_data_url": result.get("captcha_data_url", ""),
+                        "message": result.get("message", "新设备登录需要二次确认，请扫描二维码"),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
             )
-        )
-        success = wait_for_login(page, timeout=120)
-        _output(
-            {"logged_in": success, "message": "登录成功" if success else "登录超时"},
-            exit_code=0 if success else 2,
-        )
+            # 第二阶段：等待二次确认扫码（再等 120 秒）
+            result2 = wait_for_login(page, timeout=120)
+            _output(
+                {
+                    "logged_in": result2.get("logged_in", False),
+                    "message": "登录成功" if result2.get("logged_in") else "二次确认超时",
+                },
+                exit_code=0 if result2.get("logged_in") else 2,
+            )
+            return
+
+        _output({"logged_in": False, "message": "登录超时"}, exit_code=2)
     finally:
         browser.close_page(page)
         browser.close()
 
 
 def cmd_phone_login(args: argparse.Namespace) -> None:
-    """手机号+验证码登录（适用于无界面服务器）。"""
-    from xhs.login import send_phone_code, submit_phone_code
+    """手机号+验证码登录（适用于无界面服务器）。
+
+    验证码提交后可能弹出二次确认弹窗（新设备登录），
+    此时输出二次确认二维码信息。
+    """
+    from xhs.login import send_phone_code, submit_phone_code, wait_for_login
 
     browser, page = _connect(args)
     try:
@@ -199,11 +253,42 @@ def cmd_phone_login(args: argparse.Namespace) -> None:
             _output({"success": False, "error": "验证码不能为空"}, exit_code=2)
             return
 
-        success = submit_phone_code(page, code)
-        _output(
-            {"logged_in": success, "message": "登录成功" if success else "验证码错误或超时"},
-            exit_code=0 if success else 2,
-        )
+        result = submit_phone_code(page, code)
+
+        if result.get("logged_in"):
+            _output({"logged_in": True, "message": "登录成功"})
+            return
+
+        if result.get("error"):
+            _output({"logged_in": False, "message": result["error"]}, exit_code=2)
+            return
+
+        # 二次确认弹窗
+        if result.get("captcha_required"):
+            print(
+                json.dumps(
+                    {
+                        "captcha_required": True,
+                        "captcha_qrcode_path": result.get("captcha_qrcode_path", ""),
+                        "captcha_data_url": result.get("captcha_data_url", ""),
+                        "message": result.get("message", "新设备登录需要二次确认，请扫描二维码"),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+            # 继续等待用户扫第二个码
+            result2 = wait_for_login(page, timeout=120)
+            _output(
+                {
+                    "logged_in": result2.get("logged_in", False),
+                    "message": "登录成功" if result2.get("logged_in") else "二次确认超时",
+                },
+                exit_code=0 if result2.get("logged_in") else 2,
+            )
+            return
+
+        _output({"logged_in": False, "message": "验证码错误或超时"}, exit_code=2)
     finally:
         browser.close_page(page)
         browser.close()
@@ -238,6 +323,35 @@ def cmd_get_qrcode(args: argparse.Namespace) -> None:
     })
 
 
+def cmd_get_captcha_qrcode(args: argparse.Namespace) -> None:
+    """获取二次确认弹窗中的二维码（非阻塞）。
+
+    用于 get-qrcode 非阻塞流程：用户扫完第一个二维码后轮询 check-login
+    发现 captcha_required=true 时，调用此命令提取弹窗内的二维码。
+    """
+    from xhs.login import fetch_captcha_qrcode
+
+    browser, page = _connect_existing(args)
+
+    result = fetch_captcha_qrcode(page)
+
+    # 只断开 CDP 连接，不关闭 tab——会话保持，用户继续扫码
+    browser.close()
+
+    if result.get("captcha_required"):
+        _output({
+            "captcha_required": True,
+            "captcha_qrcode_path": result.get("captcha_qrcode_path", ""),
+            "captcha_data_url": result.get("captcha_data_url", ""),
+            "message": result.get("message", "新设备登录需要二次确认，请扫描二维码"),
+        })
+    else:
+        _output({
+            "captcha_required": False,
+            "message": "未检测到二次确认弹窗",
+        })
+
+
 def cmd_send_code(args: argparse.Namespace) -> None:
     """分步登录第一步：填写手机号并发送验证码，保持页面不关闭。"""
     from chrome_launcher import has_display, restart_chrome
@@ -270,15 +384,43 @@ def cmd_send_code(args: argparse.Namespace) -> None:
 
 
 def cmd_verify_code(args: argparse.Namespace) -> None:
-    """分步登录第二步：在已有页面上填写验证码并提交。"""
-    from xhs.login import submit_phone_code
+    """分步登录第二步：在已有页面上填写验证码并提交。
+
+    提交验证码后可能出现二次确认弹窗（新设备登录），
+    此时输出二次确认二维码，用户需用小红书 App 扫码完成。
+    """
+    from xhs.login import submit_phone_code, wait_for_login
 
     browser, page = _connect_existing(args)
     try:
-        success = submit_phone_code(page, args.code)
+        result = submit_phone_code(page, args.code)
+
+        if result.get("logged_in"):
+            _output({"logged_in": True, "message": "登录成功"})
+            return
+
+        if result.get("error"):
+            _output(
+                {"logged_in": False, "message": result["error"]},
+                exit_code=2,
+            )
+            return
+
+        # 二次确认弹窗
+        if result.get("captcha_required"):
+            # 不关闭页面，输出二维码让用户扫码
+            _output({
+                "logged_in": False,
+                "captcha_required": True,
+                "captcha_qrcode_path": result.get("captcha_qrcode_path", ""),
+                "captcha_data_url": result.get("captcha_data_url", ""),
+                "message": result.get("message", "新设备登录需要二次确认，请扫描二维码"),
+            }, exit_code=1)
+            return
+
         _output(
-            {"logged_in": success, "message": "登录成功" if success else "验证码错误或超时"},
-            exit_code=0 if success else 2,
+            {"logged_in": False, "message": "验证码错误或超时"},
+            exit_code=2,
         )
     finally:
         browser.close_page(page)
@@ -726,6 +868,10 @@ def build_parser() -> argparse.ArgumentParser:
     # get-qrcode（非阻塞，截图后立即返回）
     sub = subparsers.add_parser("get-qrcode", help="获取登录二维码截图并立即返回（非阻塞）")
     sub.set_defaults(func=cmd_get_qrcode)
+
+    # get-captcha-qrcode（获取二次确认弹窗的二维码，非阻塞）
+    sub = subparsers.add_parser("get-captcha-qrcode", help="获取二次确认弹窗的二维码（非阻塞）")
+    sub.set_defaults(func=cmd_get_captcha_qrcode)
 
     # phone-login（单命令交互式）
     sub = subparsers.add_parser("phone-login", help="手机号+验证码登录（交互式，适合本地终端）")

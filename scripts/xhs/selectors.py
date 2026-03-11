@@ -6,7 +6,7 @@ QRCODE_IMG = ".login-container .qrcode-img"
 
 # 二次确认弹窗（新设备登录）
 CAPTCHA_MODAL = ".captcha-modal-content"
-CAPTCHA_QRCODE = ".captcha-modal-content img"
+CAPTCHA_QRCODE = ".captcha-modal-content .qrcode-container .qrcode-img"
 
 # ========== 手机号登录 ==========
 LOGIN_CONTAINER = ".login-container"
