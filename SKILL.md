@@ -13,17 +13,17 @@ description: |
 
 按优先级路由：
 
-1. **内容创作** → 参考`./skills/xhs-content-creation/SKILL.md`
+1. **内容创作** → 执行 `xhs-content-creation` 技能
    - 触发词：写笔记、创作内容、生成图片卡片、制作卡片
-2. **认证登录** → 参考`./skills/xhs-auth/SKILL.md`
+2. **认证登录** → 执行 `xhs-auth` 技能
    - 触发词：登录、登录小红书、检查登录、切换账号
-3. **发布内容** → 参考`./skills/xhs-publish/SKILL.md`
+3. **发布内容** → 执行 `xhs-publish` 技能
    - 触发词：发布、发帖子、上传图文、上传视频
-4. **搜索发现** → 参考`./skills/xhs-explore/SKILL.md`
+4. **搜索发现** → 执行 `xhs-explore` 技能
    - 触发词：搜索笔记、查看详情、浏览首页、看用户主页
-5. **社交互动** → 参考`./skills/xhs-interact/SKILL.md`
+5. **社交互动** → 执行 `xhs-interact` 技能
    - 触发词：评论、回复、点赞、收藏
-6. **复合运营** → 参考`./skills/xhs-content-ops/SKILL.md`
+6. **复合运营** → 执行 `xhs-content-ops` 技能
    - 触发词：竞品分析、热点追踪、批量互动
 
 ## 全局约束
