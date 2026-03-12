@@ -340,7 +340,12 @@ def logout(page: Page) -> bool:
     return True
 
 
-def wait_for_login(page: Page, timeout: float = 120.0) -> dict[str, object]:
+def wait_for_login(
+    page: Page,
+    timeout: float = 120.0,
+    *,
+    detect_captcha: bool = True,
+) -> dict[str, object]:
     """等待扫码登录完成。
 
     处理小红书扫码登录流程：
@@ -352,6 +357,8 @@ def wait_for_login(page: Page, timeout: float = 120.0) -> dict[str, object]:
     Args:
         page: CDP 页面对象。
         timeout: 超时时间（秒）。
+        detect_captcha: 是否检测二次确认弹窗。第二阶段等待时应设为 False，
+            避免重复检测已存在的弹窗而立即返回。
 
     Returns:
         dict:
@@ -369,7 +376,7 @@ def wait_for_login(page: Page, timeout: float = 120.0) -> dict[str, object]:
             return {"logged_in": True}
 
         # 检测二次确认弹窗（新设备登录）
-        if page.has_element(CAPTCHA_MODAL):
+        if detect_captcha and page.has_element(CAPTCHA_MODAL):
             logger.info("检测到二次确认弹窗（新设备登录）")
             result = _extract_captcha_qrcode(page)
             if result:

@@ -199,7 +199,8 @@ def cmd_login(args: argparse.Namespace) -> None:
                 flush=True,
             )
             # 第二阶段：等待二次确认扫码（再等 120 秒）
-            result2 = wait_for_login(page, timeout=120)
+            # detect_captcha=False: 弹窗已存在，不再重复检测
+            result2 = wait_for_login(page, timeout=120, detect_captcha=False)
             _output(
                 {
                     "logged_in": result2.get("logged_in", False),
@@ -278,7 +279,8 @@ def cmd_phone_login(args: argparse.Namespace) -> None:
                 flush=True,
             )
             # 继续等待用户扫第二个码
-            result2 = wait_for_login(page, timeout=120)
+            # detect_captcha=False: 弹窗已存在，不再重复检测
+            result2 = wait_for_login(page, timeout=120, detect_captcha=False)
             _output(
                 {
                     "logged_in": result2.get("logged_in", False),
@@ -389,7 +391,7 @@ def cmd_verify_code(args: argparse.Namespace) -> None:
     提交验证码后可能出现二次确认弹窗（新设备登录），
     此时输出二次确认二维码，用户需用小红书 App 扫码完成。
     """
-    from xhs.login import submit_phone_code, wait_for_login
+    from xhs.login import submit_phone_code
 
     browser, page = _connect_existing(args)
     try:
